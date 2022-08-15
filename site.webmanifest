@@ -2,7 +2,7 @@
     "name": "lEANSPIN",
     "short_name": "lEANSPIN PWA",
     "theme_color": "#333",
-    "background_color": "#fff",
+    "background_color": "#333",
     "display": "standalone",
     "orientation": "portrait",
     "start_url": ".",
