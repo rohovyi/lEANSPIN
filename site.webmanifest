@@ -8,22 +8,22 @@
     "start_url": ".",
     "icons": [
         {
-            "src": "/img/logo/image-512w.png",
+            "src": "/leanspin/img/logo/image-512w.png",
             "sizes": "512x70",
             "type": "image/png"
         },
         {
-            "src": "/img/logo/image.png",
+            "src": "/leanspin/img/logo/image.png",
             "sizes": "147x20",
             "type": "image/png"
         },
         {
-            "src": "/img/logo/image-2x.png",
+            "src": "/leanspin/img/logo/image-2x.png",
             "sizes": "294x40",
             "type": "image/png"
         },
         {
-            "src": "/img/logo/image-512h.webp",
+            "src": "/leanspin/img/logo/image-512h.png",
             "sizes": "3763x512",
             "type":"image/png",
             "purpose": "any maskable"
