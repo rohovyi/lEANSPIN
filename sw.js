@@ -1641,43 +1641,62 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
     }
   };
 
-  // node_modules/workbox-strategies/CacheFirst.js
-  var CacheFirst = class extends Strategy {
+  // node_modules/workbox-strategies/plugins/cacheOkAndOpaquePlugin.js
+  var cacheOkAndOpaquePlugin = {
+    cacheWillUpdate: async ({ response }) => {
+      if (response.status === 200 || response.status === 0) {
+        return response;
+      }
+      return null;
+    }
+  };
+
+  // node_modules/workbox-strategies/NetworkFirst.js
+  var NetworkFirst = class extends Strategy {
+    constructor(options = {}) {
+      super(options);
+      if (!this.plugins.some((p) => "cacheWillUpdate" in p)) {
+        this.plugins.unshift(cacheOkAndOpaquePlugin);
+      }
+      this._networkTimeoutSeconds = options.networkTimeoutSeconds || 0;
+      if (true) {
+        if (this._networkTimeoutSeconds) {
+          finalAssertExports.isType(this._networkTimeoutSeconds, "number", {
+            moduleName: "workbox-strategies",
+            className: this.constructor.name,
+            funcName: "constructor",
+            paramName: "networkTimeoutSeconds"
+          });
+        }
+      }
+    }
     async _handle(request, handler) {
       const logs = [];
       if (true) {
         finalAssertExports.isInstance(request, Request, {
           moduleName: "workbox-strategies",
           className: this.constructor.name,
-          funcName: "makeRequest",
-          paramName: "request"
+          funcName: "handle",
+          paramName: "makeRequest"
         });
       }
-      let response = await handler.cacheMatch(request);
-      let error = void 0;
-      if (!response) {
-        if (true) {
-          logs.push(`No response found in the '${this.cacheName}' cache. Will respond with a network request.`);
-        }
-        try {
-          response = await handler.fetchAndCachePut(request);
-        } catch (err) {
-          if (err instanceof Error) {
-            error = err;
-          }
-        }
-        if (true) {
-          if (response) {
-            logs.push(`Got response from network.`);
-          } else {
-            logs.push(`Unable to get a response from the network.`);
-          }
-        }
-      } else {
-        if (true) {
-          logs.push(`Found a cached response in the '${this.cacheName}' cache.`);
-        }
+      const promises = [];
+      let timeoutId;
+      if (this._networkTimeoutSeconds) {
+        const { id, promise } = this._getTimeoutPromise({ request, logs, handler });
+        timeoutId = id;
+        promises.push(promise);
       }
+      const networkPromise = this._getNetworkPromise({
+        timeoutId,
+        request,
+        logs,
+        handler
+      });
+      promises.push(networkPromise);
+      const response = await handler.waitUntil((async () => {
+        return await handler.waitUntil(Promise.race(promises)) || await networkPromise;
+      })());
       if (true) {
         logger.groupCollapsed(messages2.strategyStart(this.constructor.name, request));
         for (const log of logs) {
@@ -1687,7 +1706,55 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
         logger.groupEnd();
       }
       if (!response) {
-        throw new WorkboxError("no-response", { url: request.url, error });
+        throw new WorkboxError("no-response", { url: request.url });
+      }
+      return response;
+    }
+    _getTimeoutPromise({ request, logs, handler }) {
+      let timeoutId;
+      const timeoutPromise = new Promise((resolve) => {
+        const onNetworkTimeout = async () => {
+          if (true) {
+            logs.push(`Timing out the network response at ${this._networkTimeoutSeconds} seconds.`);
+          }
+          resolve(await handler.cacheMatch(request));
+        };
+        timeoutId = setTimeout(onNetworkTimeout, this._networkTimeoutSeconds * 1e3);
+      });
+      return {
+        promise: timeoutPromise,
+        id: timeoutId
+      };
+    }
+    async _getNetworkPromise({ timeoutId, request, logs, handler }) {
+      let error;
+      let response;
+      try {
+        response = await handler.fetchAndCachePut(request);
+      } catch (fetchError) {
+        if (fetchError instanceof Error) {
+          error = fetchError;
+        }
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (true) {
+        if (response) {
+          logs.push(`Got response from network.`);
+        } else {
+          logs.push(`Unable to get a response from the network. Will respond with a cached response.`);
+        }
+      }
+      if (error || !response) {
+        response = await handler.cacheMatch(request);
+        if (true) {
+          if (response) {
+            logs.push(`Found a cached response in the '${this.cacheName}' cache.`);
+          } else {
+            logs.push(`No response found in the '${this.cacheName}' cache.`);
+          }
+        }
       }
       return response;
     }
@@ -2226,7 +2293,7 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
 
   // sw.ts
   precacheAndRoute([{"revision":"fc0e248f08fb36c59c4a49c44b5cec8f","url":"css/critical.min.css"},{"revision":"638ca04fb6f6b949e120584910c384cf","url":"css/landscape.min.css"},{"revision":"230df3772f7c36651b2841dc60d26f1b","url":"css/portrait.min.css"},{"revision":"af3a6280f80a268a8ca88be21424fd4d","url":"css/style.min.css"},{"revision":"47e83d116219a671e3e57a482d0813f8","url":"css/tablet.min.css"},{"revision":"2901c31e2127a41548292cb72d1dcbe0","url":"fonts/Roboto-Regular.woff2"},{"revision":"a48159a00587c958c4a58c192f3c287c","url":"img/1x1.png"},{"revision":"9617cd4b5152fdb8bad11ce7ef17a514","url":"img/1x1.webp"},{"revision":"3302f17076136146ba9ec3ada01918f8","url":"img/about_us/image-1.png"},{"revision":"27fd5d19f76a9bf237196cd544310b79","url":"img/about_us/image-1.webp"},{"revision":"9f1197727bef0fe9fe9d0d533e292607","url":"img/about_us/image.png"},{"revision":"eee95188c7da795124b7f66e786431cb","url":"img/about_us/image.webp"},{"revision":"489fdf3233a35469b8a3abaacf5097ee","url":"img/about_us/signed/Rectangle-1.png"},{"revision":"0423b593d68148609dcaa96b5a75e85c","url":"img/about_us/signed/Rectangle-1.webp"},{"revision":"b3805cbd147c4f53f6a71ce4de0cf49a","url":"img/about_us/signed/Rectangle.png"},{"revision":"b64720d83bf82f3200b8338ca825fd23","url":"img/about_us/signed/Rectangle.webp"},{"revision":"963a73036945d1898bf80e1b676fe42a","url":"img/books/Rectangle-1.png"},{"revision":"1864327214afda54c0d9d6f288851183","url":"img/books/Rectangle-1.webp"},{"revision":"6ad3e94934cd86673b1a3b92582e8b1b","url":"img/books/Rectangle-2.png"},{"revision":"9c1bc55af60f0fb08057dba005abecc6","url":"img/books/Rectangle-2.webp"},{"revision":"ad559d71293f79e5f10d6a95edbc5271","url":"img/books/Rectangle-3.png"},{"revision":"101ad9b3a858c9feb246f0cce53010cf","url":"img/books/Rectangle-3.webp"},{"revision":"280663b51d520e2bc14958aa4ccd88d8","url":"img/books/Rectangle-4.png"},{"revision":"cf4c7d947f5a0a2bc63c0727070be17a","url":"img/books/Rectangle-4.webp"},{"revision":"440a7510c149547aa349844d34e6383c","url":"img/books/Rectangle-5.png"},{"revision":"fb152c1b71571f9d40f68e7b3ea6e8fd","url":"img/books/Rectangle-5.webp"},{"revision":"799d6f61dacb86c53e4b62063ba27e78","url":"img/books/Rectangle-6.png"},{"revision":"9718b7936ea07ea9f94f832dbd6ebc80","url":"img/books/Rectangle-6.webp"},{"revision":"c166fc1d3072a0333f67eb136088d26e","url":"img/books/Rectangle.png"},{"revision":"ca517fc0afd8a8c6a6aa1925ef941879","url":"img/books/Rectangle.webp"},{"revision":"ec6aa342483c36815a1d4a722e933215","url":"img/brand/Rectangle-1.png"},{"revision":"a51daff6dcb9ea7dae7ab51b9d773b22","url":"img/brand/Rectangle-1.webp"},{"revision":"2fa78647acd00edb60f7569880350106","url":"img/brand/Rectangle-2.png"},{"revision":"ea12ecbd028a57ee0511b2b84766fb70","url":"img/brand/Rectangle-2.webp"},{"revision":"6bdf19ff8b6df4d4b62589f502d26c4f","url":"img/brand/Rectangle-3.png"},{"revision":"d305c797d3892a9a6bddd4019c8cc9ff","url":"img/brand/Rectangle-3.webp"},{"revision":"ee55a624e64d5614bb305cb3cac794c6","url":"img/brand/Rectangle-4.png"},{"revision":"dd566901f5878307a82ee8077717fe67","url":"img/brand/Rectangle-4.webp"},{"revision":"8cffd1eb19ec692296af69749cc20ca0","url":"img/brand/Rectangle-5.png"},{"revision":"a072a9ab7dcae1763f008d3be299e09e","url":"img/brand/Rectangle-5.webp"},{"revision":"7cfcbf229a295a93964cb41309d28ee5","url":"img/brand/Rectangle-6.png"},{"revision":"e244c466368b563d1a0dcf3bf707bf28","url":"img/brand/Rectangle-6.webp"},{"revision":"c576d48dc9843d39966693e5efbc0c3f","url":"img/brand/Rectangle-7.png"},{"revision":"b76513275ea52cddef937c8bd9022341","url":"img/brand/Rectangle-7.webp"},{"revision":"2752d434c25592c102ae4abb43101c92","url":"img/brand/Rectangle-8.png"},{"revision":"8a33dcba8dcadcfbf52757c7c1eeeb29","url":"img/brand/Rectangle-8.webp"},{"revision":"76e554f640593cdca50e921579a94e27","url":"img/brand/Rectangle-9.png"},{"revision":"2d49f6a3e5aa5bb319d3e65008937e0d","url":"img/brand/Rectangle-9.webp"},{"revision":"6948cfcfd08fca58be5a41e0c595b479","url":"img/brand/Rectangle.png"},{"revision":"b38a2e80adc97947d3c02c6740766d4e","url":"img/brand/Rectangle.webp"},{"revision":"639b9adb8867f7a4adf8accd0d22099d","url":"img/eu4fgssvf211.png"},{"revision":"0f754039102028568c8f18eaa8f2bee8","url":"img/eu4fgssvf211.webp"},{"revision":"61c69dcf22585d94f6945062144d2611","url":"img/eu4fgssvf28.png"},{"revision":"7d26089716210a40135269294da6377e","url":"img/eu4fgssvf28.webp"},{"revision":"c0618e9fd3d9b2aa7d9bdba8722d1077","url":"img/history/Rectangle-1.png"},{"revision":"02c890e6112351ee0ce9a85ed31a7847","url":"img/history/Rectangle-1.webp"},{"revision":"b14215fa9146191a1064274a44e596d9","url":"img/history/Rectangle-2.png"},{"revision":"b269033a3ed967b4ce62581ed1b06d5a","url":"img/history/Rectangle-2.webp"},{"revision":"4f39e62be255e01dd3c305cc52fbd515","url":"img/history/Rectangle-3.png"},{"revision":"e6b4ce357622f5257277756a62bb6999","url":"img/history/Rectangle-3.webp"},{"revision":"09c670f6684ea76d615e863e1a2d16af","url":"img/history/Rectangle-4.png"},{"revision":"d08b5c5f2d7b2e3a30d03328c75480d9","url":"img/history/Rectangle-4.webp"},{"revision":"4398a16fa304b0ed8066ac2a065ded34","url":"img/history/Rectangle-5.png"},{"revision":"1aad7e509451eefd2a2cd5307340030b","url":"img/history/Rectangle-5.webp"},{"revision":"4ecfe3961fe8a1fee92acbee78fe7fab","url":"img/history/Rectangle-6.png"},{"revision":"9fb58bcc56c0ee0407525830e0bf1224","url":"img/history/Rectangle-6.webp"},{"revision":"bca9894c2324a92e9ac9f0dfbd08288b","url":"img/history/Rectangle-7.png"},{"revision":"47c11b1da06f4df37630a80924364dbe","url":"img/history/Rectangle-7.webp"},{"revision":"a148d724995b9e4883c13788756e03d2","url":"img/history/Rectangle.png"},{"revision":"bd989fc7940f9b3ac08137ae2e87a3d3","url":"img/history/Rectangle.webp"},{"revision":"ca38c0e08d38fbbb09b0805e660d79db","url":"img/icons/icons.svg"},{"revision":"aa7d9e9804254e2fc5a3039822a9029b","url":"img/icons/Vector-1.png"},{"revision":"5eaf1bdcb09823f790d42460b0d4fb28","url":"img/icons/Vector-1.webp"},{"revision":"87b61b620f06346af3fcf705a777fdf4","url":"img/icons/Vector-2.png"},{"revision":"35fe676ba2bf237472aadfdda481f4e5","url":"img/icons/Vector-2.webp"},{"revision":"96c9e3b3e8bedf94524e0762489a558d","url":"img/icons/Vector-3.png"},{"revision":"cb8bd2cf5a73358f68a0fc7321f707f9","url":"img/icons/Vector-3.webp"},{"revision":"99b985dca1d9c5578b3abc33f33e7753","url":"img/icons/Vector.png"},{"revision":"f4a45a15964f20b2c455338a7e4c9392","url":"img/icons/Vector.webp"},{"revision":"60ef0a7ed008ed07883a1c1cc217a8b6","url":"img/logo/image-2x.png"},{"revision":"15e4b5b3afd6ac0babb079fd568b40ef","url":"img/logo/image-2x.webp"},{"revision":"4bf87c85e3167b5e0a29c363168e714e","url":"img/logo/image-3x.png"},{"revision":"595c01ed5de1ec8ce6990edb2c0b29fb","url":"img/logo/image-3x.webp"},{"revision":"068deb81f993194007a77d94cdfed7a2","url":"img/logo/image-4x.png"},{"revision":"6ab798d20eea36063cea2f16dd8783c6","url":"img/logo/image-4x.webp"},{"revision":"6e230d16306a52881e201f82e2047634","url":"img/logo/image-512h.png"},{"revision":"9ed0f4ca44277b4bff99485470aeac0d","url":"img/logo/image-512h.webp"},{"revision":"5ce5db780dc56bc6a16cf25c15112761","url":"img/logo/image-512w.png"},{"revision":"5cbd55396786467d088441360147123b","url":"img/logo/image-512w.webp"},{"revision":"be4a20f6b63089f3da57493ec5eec449","url":"img/logo/image-512x512.png"},{"revision":"537d6c9092198118be01662c94e5c790","url":"img/logo/image-512x512.webp"},{"revision":"33743534e207c1cd95b5b8849ca28fb1","url":"img/logo/image.png"},{"revision":"b582dcaee959ee1fd2d46d0be117d234","url":"img/logo/image.webp"},{"revision":"e1a8999f01b158f8fd3e5873b0f367e7","url":"js/app.min.js"},{"revision":"7698872bc54689d2637c257bc943bf41","url":"webpack.config.js"}]);
-  registerRoute(({ request }) => request.destination === "image", new CacheFirst({
+  registerRoute(({ request }) => request.destination === "image", new NetworkFirst({
     cacheName: "images",
     plugins: [
       new ExpirationPlugin({
@@ -2238,7 +2305,7 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
   }));
   var scriptsRoute = new Route(({ request }) => {
     return request.destination === "script";
-  }, new CacheFirst({
+  }, new NetworkFirst({
     cacheName: "scripts",
     plugins: [
       new ExpirationPlugin({
@@ -2248,7 +2315,7 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
   }));
   var stylesRoute = new Route(({ request }) => {
     return request.destination === "style";
-  }, new CacheFirst({
+  }, new NetworkFirst({
     cacheName: "styles"
   }));
   registerRoute(scriptsRoute);
