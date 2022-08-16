@@ -29,8 +29,8 @@
             "type": "image/png"
         },
         {
-            "src": "/leanspin/img/logo/image-512h.png",
-            "sizes": "3763x512",
+            "src": "/leanspin/img/logo/image-3x.png",
+            "sizes": "441x60",
             "type": "image/png",
             "purpose": "any maskable"
         }
