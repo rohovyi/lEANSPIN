@@ -8,6 +8,12 @@
     "start_url": ".",
     "icons": [
         {
+            "src": "/leanspin/img/logo/image-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
             "src": "/leanspin/img/logo/image-512w.png",
             "sizes": "512x70",
             "type": "image/png"
@@ -25,7 +31,7 @@
         {
             "src": "/leanspin/img/logo/image-512h.png",
             "sizes": "3763x512",
-            "type":"image/png",
+            "type": "image/png",
             "purpose": "any maskable"
         }
     ]
