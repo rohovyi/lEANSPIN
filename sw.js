@@ -241,6 +241,47 @@
     isArrayOfClass
   };
 
+  // node_modules/workbox-core/_private/cacheNames.js
+  var _cacheNameDetails = {
+    googleAnalytics: "googleAnalytics",
+    precache: "precache-v2",
+    prefix: "workbox",
+    runtime: "runtime",
+    suffix: typeof registration !== "undefined" ? registration.scope : ""
+  };
+  var _createCacheName = (cacheName) => {
+    return [_cacheNameDetails.prefix, cacheName, _cacheNameDetails.suffix].filter((value) => value && value.length > 0).join("-");
+  };
+  var eachCacheNameDetail = (fn) => {
+    for (const key of Object.keys(_cacheNameDetails)) {
+      fn(key);
+    }
+  };
+  var cacheNames = {
+    updateDetails: (details) => {
+      eachCacheNameDetail((key) => {
+        if (typeof details[key] === "string") {
+          _cacheNameDetails[key] = details[key];
+        }
+      });
+    },
+    getGoogleAnalyticsName: (userCacheName) => {
+      return userCacheName || _createCacheName(_cacheNameDetails.googleAnalytics);
+    },
+    getPrecacheName: (userCacheName) => {
+      return userCacheName || _createCacheName(_cacheNameDetails.precache);
+    },
+    getPrefix: () => {
+      return _cacheNameDetails.prefix;
+    },
+    getRuntimeName: (userCacheName) => {
+      return userCacheName || _createCacheName(_cacheNameDetails.runtime);
+    },
+    getSuffix: () => {
+      return _cacheNameDetails.suffix;
+    }
+  };
+
   // node_modules/workbox-core/_private/logger.js
   var logger = false ? null : (() => {
     if (!("__WB_DISABLE_DEV_LOGS" in self)) {
@@ -292,422 +333,176 @@
     return api;
   })();
 
-  // node_modules/workbox-routing/_version.js
+  // node_modules/workbox-core/_private/waitUntil.js
+  function waitUntil(event, asyncFn) {
+    const returnPromise = asyncFn();
+    event.waitUntil(returnPromise);
+    return returnPromise;
+  }
+
+  // node_modules/workbox-precaching/_version.js
   "use strict";
   try {
-    self["workbox:routing:6.5.3"] && _();
+    self["workbox:precaching:6.5.3"] && _();
   } catch (e) {
   }
 
-  // node_modules/workbox-routing/utils/constants.js
-  var defaultMethod = "GET";
-  var validMethods = [
-    "DELETE",
-    "GET",
-    "HEAD",
-    "PATCH",
-    "POST",
-    "PUT"
-  ];
-
-  // node_modules/workbox-routing/utils/normalizeHandler.js
-  var normalizeHandler = (handler) => {
-    if (handler && typeof handler === "object") {
-      if (true) {
-        finalAssertExports.hasMethod(handler, "handle", {
-          moduleName: "workbox-routing",
-          className: "Route",
-          funcName: "constructor",
-          paramName: "handler"
-        });
-      }
-      return handler;
-    } else {
-      if (true) {
-        finalAssertExports.isType(handler, "function", {
-          moduleName: "workbox-routing",
-          className: "Route",
-          funcName: "constructor",
-          paramName: "handler"
-        });
-      }
-      return { handle: handler };
+  // node_modules/workbox-precaching/utils/createCacheKey.js
+  var REVISION_SEARCH_PARAM = "__WB_REVISION__";
+  function createCacheKey(entry) {
+    if (!entry) {
+      throw new WorkboxError("add-to-cache-list-unexpected-type", { entry });
     }
-  };
-
-  // node_modules/workbox-routing/Route.js
-  var Route = class {
-    constructor(match, handler, method = defaultMethod) {
-      if (true) {
-        finalAssertExports.isType(match, "function", {
-          moduleName: "workbox-routing",
-          className: "Route",
-          funcName: "constructor",
-          paramName: "match"
-        });
-        if (method) {
-          finalAssertExports.isOneOf(method, validMethods, { paramName: "method" });
-        }
-      }
-      this.handler = normalizeHandler(handler);
-      this.match = match;
-      this.method = method;
-    }
-    setCatchHandler(handler) {
-      this.catchHandler = normalizeHandler(handler);
-    }
-  };
-
-  // node_modules/workbox-routing/RegExpRoute.js
-  var RegExpRoute = class extends Route {
-    constructor(regExp, handler, method) {
-      if (true) {
-        finalAssertExports.isInstance(regExp, RegExp, {
-          moduleName: "workbox-routing",
-          className: "RegExpRoute",
-          funcName: "constructor",
-          paramName: "pattern"
-        });
-      }
-      const match = ({ url }) => {
-        const result = regExp.exec(url.href);
-        if (!result) {
-          return;
-        }
-        if (url.origin !== location.origin && result.index !== 0) {
-          if (true) {
-            logger.debug(`The regular expression '${regExp.toString()}' only partially matched against the cross-origin URL '${url.toString()}'. RegExpRoute's will only handle cross-origin requests if they match the entire URL.`);
-          }
-          return;
-        }
-        return result.slice(1);
+    if (typeof entry === "string") {
+      const urlObject = new URL(entry, location.href);
+      return {
+        cacheKey: urlObject.href,
+        url: urlObject.href
       };
-      super(match, handler, method);
+    }
+    const { revision, url } = entry;
+    if (!url) {
+      throw new WorkboxError("add-to-cache-list-unexpected-type", { entry });
+    }
+    if (!revision) {
+      const urlObject = new URL(url, location.href);
+      return {
+        cacheKey: urlObject.href,
+        url: urlObject.href
+      };
+    }
+    const cacheKeyURL = new URL(url, location.href);
+    const originalURL = new URL(url, location.href);
+    cacheKeyURL.searchParams.set(REVISION_SEARCH_PARAM, revision);
+    return {
+      cacheKey: cacheKeyURL.href,
+      url: originalURL.href
+    };
+  }
+
+  // node_modules/workbox-precaching/utils/PrecacheInstallReportPlugin.js
+  var PrecacheInstallReportPlugin = class {
+    constructor() {
+      this.updatedURLs = [];
+      this.notUpdatedURLs = [];
+      this.handlerWillStart = async ({ request, state }) => {
+        if (state) {
+          state.originalRequest = request;
+        }
+      };
+      this.cachedResponseWillBeUsed = async ({ event, state, cachedResponse }) => {
+        if (event.type === "install") {
+          if (state && state.originalRequest && state.originalRequest instanceof Request) {
+            const url = state.originalRequest.url;
+            if (cachedResponse) {
+              this.notUpdatedURLs.push(url);
+            } else {
+              this.updatedURLs.push(url);
+            }
+          }
+        }
+        return cachedResponse;
+      };
     }
   };
+
+  // node_modules/workbox-precaching/utils/PrecacheCacheKeyPlugin.js
+  var PrecacheCacheKeyPlugin = class {
+    constructor({ precacheController: precacheController2 }) {
+      this.cacheKeyWillBeUsed = async ({ request, params }) => {
+        const cacheKey = (params === null || params === void 0 ? void 0 : params.cacheKey) || this._precacheController.getCacheKeyForURL(request.url);
+        return cacheKey ? new Request(cacheKey, { headers: request.headers }) : request;
+      };
+      this._precacheController = precacheController2;
+    }
+  };
+
+  // node_modules/workbox-precaching/utils/printCleanupDetails.js
+  var logGroup = (groupTitle, deletedURLs) => {
+    logger.groupCollapsed(groupTitle);
+    for (const url of deletedURLs) {
+      logger.log(url);
+    }
+    logger.groupEnd();
+  };
+  function printCleanupDetails(deletedURLs) {
+    const deletionCount = deletedURLs.length;
+    if (deletionCount > 0) {
+      logger.groupCollapsed(`During precaching cleanup, ${deletionCount} cached request${deletionCount === 1 ? " was" : "s were"} deleted.`);
+      logGroup("Deleted Cache Requests", deletedURLs);
+      logger.groupEnd();
+    }
+  }
+
+  // node_modules/workbox-precaching/utils/printInstallDetails.js
+  function _nestedGroup(groupTitle, urls) {
+    if (urls.length === 0) {
+      return;
+    }
+    logger.groupCollapsed(groupTitle);
+    for (const url of urls) {
+      logger.log(url);
+    }
+    logger.groupEnd();
+  }
+  function printInstallDetails(urlsToPrecache, urlsAlreadyPrecached) {
+    const precachedCount = urlsToPrecache.length;
+    const alreadyPrecachedCount = urlsAlreadyPrecached.length;
+    if (precachedCount || alreadyPrecachedCount) {
+      let message = `Precaching ${precachedCount} file${precachedCount === 1 ? "" : "s"}.`;
+      if (alreadyPrecachedCount > 0) {
+        message += ` ${alreadyPrecachedCount} file${alreadyPrecachedCount === 1 ? " is" : "s are"} already cached.`;
+      }
+      logger.groupCollapsed(message);
+      _nestedGroup(`View newly precached URLs.`, urlsToPrecache);
+      _nestedGroup(`View previously precached URLs.`, urlsAlreadyPrecached);
+      logger.groupEnd();
+    }
+  }
+
+  // node_modules/workbox-core/_private/canConstructResponseFromBodyStream.js
+  var supportStatus;
+  function canConstructResponseFromBodyStream() {
+    if (supportStatus === void 0) {
+      const testResponse = new Response("");
+      if ("body" in testResponse) {
+        try {
+          new Response(testResponse.body);
+          supportStatus = true;
+        } catch (error) {
+          supportStatus = false;
+        }
+      }
+      supportStatus = false;
+    }
+    return supportStatus;
+  }
+
+  // node_modules/workbox-core/copyResponse.js
+  async function copyResponse(response, modifier) {
+    let origin = null;
+    if (response.url) {
+      const responseURL = new URL(response.url);
+      origin = responseURL.origin;
+    }
+    if (origin !== self.location.origin) {
+      throw new WorkboxError("cross-origin-copy-response", { origin });
+    }
+    const clonedResponse = response.clone();
+    const responseInit = {
+      headers: new Headers(clonedResponse.headers),
+      status: clonedResponse.status,
+      statusText: clonedResponse.statusText
+    };
+    const modifiedResponseInit = modifier ? modifier(responseInit) : responseInit;
+    const body = canConstructResponseFromBodyStream() ? clonedResponse.body : await clonedResponse.blob();
+    return new Response(body, modifiedResponseInit);
+  }
 
   // node_modules/workbox-core/_private/getFriendlyURL.js
   var getFriendlyURL = (url) => {
     const urlObj = new URL(String(url), location.href);
     return urlObj.href.replace(new RegExp(`^${location.origin}`), "");
-  };
-
-  // node_modules/workbox-routing/Router.js
-  var Router = class {
-    constructor() {
-      this._routes = new Map();
-      this._defaultHandlerMap = new Map();
-    }
-    get routes() {
-      return this._routes;
-    }
-    addFetchListener() {
-      self.addEventListener("fetch", (event) => {
-        const { request } = event;
-        const responsePromise = this.handleRequest({ request, event });
-        if (responsePromise) {
-          event.respondWith(responsePromise);
-        }
-      });
-    }
-    addCacheListener() {
-      self.addEventListener("message", (event) => {
-        if (event.data && event.data.type === "CACHE_URLS") {
-          const { payload } = event.data;
-          if (true) {
-            logger.debug(`Caching URLs from the window`, payload.urlsToCache);
-          }
-          const requestPromises = Promise.all(payload.urlsToCache.map((entry) => {
-            if (typeof entry === "string") {
-              entry = [entry];
-            }
-            const request = new Request(...entry);
-            return this.handleRequest({ request, event });
-          }));
-          event.waitUntil(requestPromises);
-          if (event.ports && event.ports[0]) {
-            void requestPromises.then(() => event.ports[0].postMessage(true));
-          }
-        }
-      });
-    }
-    handleRequest({ request, event }) {
-      if (true) {
-        finalAssertExports.isInstance(request, Request, {
-          moduleName: "workbox-routing",
-          className: "Router",
-          funcName: "handleRequest",
-          paramName: "options.request"
-        });
-      }
-      const url = new URL(request.url, location.href);
-      if (!url.protocol.startsWith("http")) {
-        if (true) {
-          logger.debug(`Workbox Router only supports URLs that start with 'http'.`);
-        }
-        return;
-      }
-      const sameOrigin = url.origin === location.origin;
-      const { params, route } = this.findMatchingRoute({
-        event,
-        request,
-        sameOrigin,
-        url
-      });
-      let handler = route && route.handler;
-      const debugMessages = [];
-      if (true) {
-        if (handler) {
-          debugMessages.push([`Found a route to handle this request:`, route]);
-          if (params) {
-            debugMessages.push([
-              `Passing the following params to the route's handler:`,
-              params
-            ]);
-          }
-        }
-      }
-      const method = request.method;
-      if (!handler && this._defaultHandlerMap.has(method)) {
-        if (true) {
-          debugMessages.push(`Failed to find a matching route. Falling back to the default handler for ${method}.`);
-        }
-        handler = this._defaultHandlerMap.get(method);
-      }
-      if (!handler) {
-        if (true) {
-          logger.debug(`No route found for: ${getFriendlyURL(url)}`);
-        }
-        return;
-      }
-      if (true) {
-        logger.groupCollapsed(`Router is responding to: ${getFriendlyURL(url)}`);
-        debugMessages.forEach((msg) => {
-          if (Array.isArray(msg)) {
-            logger.log(...msg);
-          } else {
-            logger.log(msg);
-          }
-        });
-        logger.groupEnd();
-      }
-      let responsePromise;
-      try {
-        responsePromise = handler.handle({ url, request, event, params });
-      } catch (err) {
-        responsePromise = Promise.reject(err);
-      }
-      const catchHandler = route && route.catchHandler;
-      if (responsePromise instanceof Promise && (this._catchHandler || catchHandler)) {
-        responsePromise = responsePromise.catch(async (err) => {
-          if (catchHandler) {
-            if (true) {
-              logger.groupCollapsed(`Error thrown when responding to:  ${getFriendlyURL(url)}. Falling back to route's Catch Handler.`);
-              logger.error(`Error thrown by:`, route);
-              logger.error(err);
-              logger.groupEnd();
-            }
-            try {
-              return await catchHandler.handle({ url, request, event, params });
-            } catch (catchErr) {
-              if (catchErr instanceof Error) {
-                err = catchErr;
-              }
-            }
-          }
-          if (this._catchHandler) {
-            if (true) {
-              logger.groupCollapsed(`Error thrown when responding to:  ${getFriendlyURL(url)}. Falling back to global Catch Handler.`);
-              logger.error(`Error thrown by:`, route);
-              logger.error(err);
-              logger.groupEnd();
-            }
-            return this._catchHandler.handle({ url, request, event });
-          }
-          throw err;
-        });
-      }
-      return responsePromise;
-    }
-    findMatchingRoute({ url, sameOrigin, request, event }) {
-      const routes = this._routes.get(request.method) || [];
-      for (const route of routes) {
-        let params;
-        const matchResult = route.match({ url, sameOrigin, request, event });
-        if (matchResult) {
-          if (true) {
-            if (matchResult instanceof Promise) {
-              logger.warn(`While routing ${getFriendlyURL(url)}, an async matchCallback function was used. Please convert the following route to use a synchronous matchCallback function:`, route);
-            }
-          }
-          params = matchResult;
-          if (Array.isArray(params) && params.length === 0) {
-            params = void 0;
-          } else if (matchResult.constructor === Object && Object.keys(matchResult).length === 0) {
-            params = void 0;
-          } else if (typeof matchResult === "boolean") {
-            params = void 0;
-          }
-          return { route, params };
-        }
-      }
-      return {};
-    }
-    setDefaultHandler(handler, method = defaultMethod) {
-      this._defaultHandlerMap.set(method, normalizeHandler(handler));
-    }
-    setCatchHandler(handler) {
-      this._catchHandler = normalizeHandler(handler);
-    }
-    registerRoute(route) {
-      if (true) {
-        finalAssertExports.isType(route, "object", {
-          moduleName: "workbox-routing",
-          className: "Router",
-          funcName: "registerRoute",
-          paramName: "route"
-        });
-        finalAssertExports.hasMethod(route, "match", {
-          moduleName: "workbox-routing",
-          className: "Router",
-          funcName: "registerRoute",
-          paramName: "route"
-        });
-        finalAssertExports.isType(route.handler, "object", {
-          moduleName: "workbox-routing",
-          className: "Router",
-          funcName: "registerRoute",
-          paramName: "route"
-        });
-        finalAssertExports.hasMethod(route.handler, "handle", {
-          moduleName: "workbox-routing",
-          className: "Router",
-          funcName: "registerRoute",
-          paramName: "route.handler"
-        });
-        finalAssertExports.isType(route.method, "string", {
-          moduleName: "workbox-routing",
-          className: "Router",
-          funcName: "registerRoute",
-          paramName: "route.method"
-        });
-      }
-      if (!this._routes.has(route.method)) {
-        this._routes.set(route.method, []);
-      }
-      this._routes.get(route.method).push(route);
-    }
-    unregisterRoute(route) {
-      if (!this._routes.has(route.method)) {
-        throw new WorkboxError("unregister-route-but-not-found-with-method", {
-          method: route.method
-        });
-      }
-      const routeIndex = this._routes.get(route.method).indexOf(route);
-      if (routeIndex > -1) {
-        this._routes.get(route.method).splice(routeIndex, 1);
-      } else {
-        throw new WorkboxError("unregister-route-route-not-registered");
-      }
-    }
-  };
-
-  // node_modules/workbox-routing/utils/getOrCreateDefaultRouter.js
-  var defaultRouter;
-  var getOrCreateDefaultRouter = () => {
-    if (!defaultRouter) {
-      defaultRouter = new Router();
-      defaultRouter.addFetchListener();
-      defaultRouter.addCacheListener();
-    }
-    return defaultRouter;
-  };
-
-  // node_modules/workbox-routing/registerRoute.js
-  function registerRoute(capture, handler, method) {
-    let route;
-    if (typeof capture === "string") {
-      const captureUrl = new URL(capture, location.href);
-      if (true) {
-        if (!(capture.startsWith("/") || capture.startsWith("http"))) {
-          throw new WorkboxError("invalid-string", {
-            moduleName: "workbox-routing",
-            funcName: "registerRoute",
-            paramName: "capture"
-          });
-        }
-        const valueToCheck = capture.startsWith("http") ? captureUrl.pathname : capture;
-        const wildcards = "[*:?+]";
-        if (new RegExp(`${wildcards}`).exec(valueToCheck)) {
-          logger.debug(`The '$capture' parameter contains an Express-style wildcard character (${wildcards}). Strings are now always interpreted as exact matches; use a RegExp for partial or wildcard matches.`);
-        }
-      }
-      const matchCallback = ({ url }) => {
-        if (true) {
-          if (url.pathname === captureUrl.pathname && url.origin !== captureUrl.origin) {
-            logger.debug(`${capture} only partially matches the cross-origin URL ${url.toString()}. This route will only handle cross-origin requests if they match the entire URL.`);
-          }
-        }
-        return url.href === captureUrl.href;
-      };
-      route = new Route(matchCallback, handler, method);
-    } else if (capture instanceof RegExp) {
-      route = new RegExpRoute(capture, handler, method);
-    } else if (typeof capture === "function") {
-      route = new Route(capture, handler, method);
-    } else if (capture instanceof Route) {
-      route = capture;
-    } else {
-      throw new WorkboxError("unsupported-route-type", {
-        moduleName: "workbox-routing",
-        funcName: "registerRoute",
-        paramName: "capture"
-      });
-    }
-    const defaultRouter2 = getOrCreateDefaultRouter();
-    defaultRouter2.registerRoute(route);
-    return route;
-  }
-
-  // node_modules/workbox-core/_private/cacheNames.js
-  var _cacheNameDetails = {
-    googleAnalytics: "googleAnalytics",
-    precache: "precache-v2",
-    prefix: "workbox",
-    runtime: "runtime",
-    suffix: typeof registration !== "undefined" ? registration.scope : ""
-  };
-  var _createCacheName = (cacheName) => {
-    return [_cacheNameDetails.prefix, cacheName, _cacheNameDetails.suffix].filter((value) => value && value.length > 0).join("-");
-  };
-  var eachCacheNameDetail = (fn) => {
-    for (const key of Object.keys(_cacheNameDetails)) {
-      fn(key);
-    }
-  };
-  var cacheNames = {
-    updateDetails: (details) => {
-      eachCacheNameDetail((key) => {
-        if (typeof details[key] === "string") {
-          _cacheNameDetails[key] = details[key];
-        }
-      });
-    },
-    getGoogleAnalyticsName: (userCacheName) => {
-      return userCacheName || _createCacheName(_cacheNameDetails.googleAnalytics);
-    },
-    getPrecacheName: (userCacheName) => {
-      return userCacheName || _createCacheName(_cacheNameDetails.precache);
-    },
-    getPrefix: () => {
-      return _cacheNameDetails.prefix;
-    },
-    getRuntimeName: (userCacheName) => {
-      return userCacheName || _createCacheName(_cacheNameDetails.runtime);
-    },
-    getSuffix: () => {
-      return _cacheNameDetails.suffix;
-    }
   };
 
   // node_modules/workbox-core/_private/cacheMatchIgnoreParams.js
@@ -1120,6 +915,719 @@
       }
     }
   };
+
+  // node_modules/workbox-precaching/PrecacheStrategy.js
+  var PrecacheStrategy = class extends Strategy {
+    constructor(options = {}) {
+      options.cacheName = cacheNames.getPrecacheName(options.cacheName);
+      super(options);
+      this._fallbackToNetwork = options.fallbackToNetwork === false ? false : true;
+      this.plugins.push(PrecacheStrategy.copyRedirectedCacheableResponsesPlugin);
+    }
+    async _handle(request, handler) {
+      const response = await handler.cacheMatch(request);
+      if (response) {
+        return response;
+      }
+      if (handler.event && handler.event.type === "install") {
+        return await this._handleInstall(request, handler);
+      }
+      return await this._handleFetch(request, handler);
+    }
+    async _handleFetch(request, handler) {
+      let response;
+      const params = handler.params || {};
+      if (this._fallbackToNetwork) {
+        if (true) {
+          logger.warn(`The precached response for ${getFriendlyURL(request.url)} in ${this.cacheName} was not found. Falling back to the network.`);
+        }
+        const integrityInManifest = params.integrity;
+        const integrityInRequest = request.integrity;
+        const noIntegrityConflict = !integrityInRequest || integrityInRequest === integrityInManifest;
+        response = await handler.fetch(new Request(request, {
+          integrity: request.mode !== "no-cors" ? integrityInRequest || integrityInManifest : void 0
+        }));
+        if (integrityInManifest && noIntegrityConflict && request.mode !== "no-cors") {
+          this._useDefaultCacheabilityPluginIfNeeded();
+          const wasCached = await handler.cachePut(request, response.clone());
+          if (true) {
+            if (wasCached) {
+              logger.log(`A response for ${getFriendlyURL(request.url)} was used to "repair" the precache.`);
+            }
+          }
+        }
+      } else {
+        throw new WorkboxError("missing-precache-entry", {
+          cacheName: this.cacheName,
+          url: request.url
+        });
+      }
+      if (true) {
+        const cacheKey = params.cacheKey || await handler.getCacheKey(request, "read");
+        logger.groupCollapsed(`Precaching is responding to: ` + getFriendlyURL(request.url));
+        logger.log(`Serving the precached url: ${getFriendlyURL(cacheKey instanceof Request ? cacheKey.url : cacheKey)}`);
+        logger.groupCollapsed(`View request details here.`);
+        logger.log(request);
+        logger.groupEnd();
+        logger.groupCollapsed(`View response details here.`);
+        logger.log(response);
+        logger.groupEnd();
+        logger.groupEnd();
+      }
+      return response;
+    }
+    async _handleInstall(request, handler) {
+      this._useDefaultCacheabilityPluginIfNeeded();
+      const response = await handler.fetch(request);
+      const wasCached = await handler.cachePut(request, response.clone());
+      if (!wasCached) {
+        throw new WorkboxError("bad-precaching-response", {
+          url: request.url,
+          status: response.status
+        });
+      }
+      return response;
+    }
+    _useDefaultCacheabilityPluginIfNeeded() {
+      let defaultPluginIndex = null;
+      let cacheWillUpdatePluginCount = 0;
+      for (const [index, plugin] of this.plugins.entries()) {
+        if (plugin === PrecacheStrategy.copyRedirectedCacheableResponsesPlugin) {
+          continue;
+        }
+        if (plugin === PrecacheStrategy.defaultPrecacheCacheabilityPlugin) {
+          defaultPluginIndex = index;
+        }
+        if (plugin.cacheWillUpdate) {
+          cacheWillUpdatePluginCount++;
+        }
+      }
+      if (cacheWillUpdatePluginCount === 0) {
+        this.plugins.push(PrecacheStrategy.defaultPrecacheCacheabilityPlugin);
+      } else if (cacheWillUpdatePluginCount > 1 && defaultPluginIndex !== null) {
+        this.plugins.splice(defaultPluginIndex, 1);
+      }
+    }
+  };
+  PrecacheStrategy.defaultPrecacheCacheabilityPlugin = {
+    async cacheWillUpdate({ response }) {
+      if (!response || response.status >= 400) {
+        return null;
+      }
+      return response;
+    }
+  };
+  PrecacheStrategy.copyRedirectedCacheableResponsesPlugin = {
+    async cacheWillUpdate({ response }) {
+      return response.redirected ? await copyResponse(response) : response;
+    }
+  };
+
+  // node_modules/workbox-precaching/PrecacheController.js
+  var PrecacheController = class {
+    constructor({ cacheName, plugins = [], fallbackToNetwork = true } = {}) {
+      this._urlsToCacheKeys = new Map();
+      this._urlsToCacheModes = new Map();
+      this._cacheKeysToIntegrities = new Map();
+      this._strategy = new PrecacheStrategy({
+        cacheName: cacheNames.getPrecacheName(cacheName),
+        plugins: [
+          ...plugins,
+          new PrecacheCacheKeyPlugin({ precacheController: this })
+        ],
+        fallbackToNetwork
+      });
+      this.install = this.install.bind(this);
+      this.activate = this.activate.bind(this);
+    }
+    get strategy() {
+      return this._strategy;
+    }
+    precache(entries) {
+      this.addToCacheList(entries);
+      if (!this._installAndActiveListenersAdded) {
+        self.addEventListener("install", this.install);
+        self.addEventListener("activate", this.activate);
+        this._installAndActiveListenersAdded = true;
+      }
+    }
+    addToCacheList(entries) {
+      if (true) {
+        finalAssertExports.isArray(entries, {
+          moduleName: "workbox-precaching",
+          className: "PrecacheController",
+          funcName: "addToCacheList",
+          paramName: "entries"
+        });
+      }
+      const urlsToWarnAbout = [];
+      for (const entry of entries) {
+        if (typeof entry === "string") {
+          urlsToWarnAbout.push(entry);
+        } else if (entry && entry.revision === void 0) {
+          urlsToWarnAbout.push(entry.url);
+        }
+        const { cacheKey, url } = createCacheKey(entry);
+        const cacheMode = typeof entry !== "string" && entry.revision ? "reload" : "default";
+        if (this._urlsToCacheKeys.has(url) && this._urlsToCacheKeys.get(url) !== cacheKey) {
+          throw new WorkboxError("add-to-cache-list-conflicting-entries", {
+            firstEntry: this._urlsToCacheKeys.get(url),
+            secondEntry: cacheKey
+          });
+        }
+        if (typeof entry !== "string" && entry.integrity) {
+          if (this._cacheKeysToIntegrities.has(cacheKey) && this._cacheKeysToIntegrities.get(cacheKey) !== entry.integrity) {
+            throw new WorkboxError("add-to-cache-list-conflicting-integrities", {
+              url
+            });
+          }
+          this._cacheKeysToIntegrities.set(cacheKey, entry.integrity);
+        }
+        this._urlsToCacheKeys.set(url, cacheKey);
+        this._urlsToCacheModes.set(url, cacheMode);
+        if (urlsToWarnAbout.length > 0) {
+          const warningMessage = `Workbox is precaching URLs without revision info: ${urlsToWarnAbout.join(", ")}
+This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
+          if (false) {
+            console.warn(warningMessage);
+          } else {
+            logger.warn(warningMessage);
+          }
+        }
+      }
+    }
+    install(event) {
+      return waitUntil(event, async () => {
+        const installReportPlugin = new PrecacheInstallReportPlugin();
+        this.strategy.plugins.push(installReportPlugin);
+        for (const [url, cacheKey] of this._urlsToCacheKeys) {
+          const integrity = this._cacheKeysToIntegrities.get(cacheKey);
+          const cacheMode = this._urlsToCacheModes.get(url);
+          const request = new Request(url, {
+            integrity,
+            cache: cacheMode,
+            credentials: "same-origin"
+          });
+          await Promise.all(this.strategy.handleAll({
+            params: { cacheKey },
+            request,
+            event
+          }));
+        }
+        const { updatedURLs, notUpdatedURLs } = installReportPlugin;
+        if (true) {
+          printInstallDetails(updatedURLs, notUpdatedURLs);
+        }
+        return { updatedURLs, notUpdatedURLs };
+      });
+    }
+    activate(event) {
+      return waitUntil(event, async () => {
+        const cache = await self.caches.open(this.strategy.cacheName);
+        const currentlyCachedRequests = await cache.keys();
+        const expectedCacheKeys = new Set(this._urlsToCacheKeys.values());
+        const deletedURLs = [];
+        for (const request of currentlyCachedRequests) {
+          if (!expectedCacheKeys.has(request.url)) {
+            await cache.delete(request);
+            deletedURLs.push(request.url);
+          }
+        }
+        if (true) {
+          printCleanupDetails(deletedURLs);
+        }
+        return { deletedURLs };
+      });
+    }
+    getURLsToCacheKeys() {
+      return this._urlsToCacheKeys;
+    }
+    getCachedURLs() {
+      return [...this._urlsToCacheKeys.keys()];
+    }
+    getCacheKeyForURL(url) {
+      const urlObject = new URL(url, location.href);
+      return this._urlsToCacheKeys.get(urlObject.href);
+    }
+    getIntegrityForCacheKey(cacheKey) {
+      return this._cacheKeysToIntegrities.get(cacheKey);
+    }
+    async matchPrecache(request) {
+      const url = request instanceof Request ? request.url : request;
+      const cacheKey = this.getCacheKeyForURL(url);
+      if (cacheKey) {
+        const cache = await self.caches.open(this.strategy.cacheName);
+        return cache.match(cacheKey);
+      }
+      return void 0;
+    }
+    createHandlerBoundToURL(url) {
+      const cacheKey = this.getCacheKeyForURL(url);
+      if (!cacheKey) {
+        throw new WorkboxError("non-precached-url", { url });
+      }
+      return (options) => {
+        options.request = new Request(url);
+        options.params = Object.assign({ cacheKey }, options.params);
+        return this.strategy.handle(options);
+      };
+    }
+  };
+
+  // node_modules/workbox-precaching/utils/getOrCreatePrecacheController.js
+  var precacheController;
+  var getOrCreatePrecacheController = () => {
+    if (!precacheController) {
+      precacheController = new PrecacheController();
+    }
+    return precacheController;
+  };
+
+  // node_modules/workbox-routing/_version.js
+  "use strict";
+  try {
+    self["workbox:routing:6.5.3"] && _();
+  } catch (e) {
+  }
+
+  // node_modules/workbox-routing/utils/constants.js
+  var defaultMethod = "GET";
+  var validMethods = [
+    "DELETE",
+    "GET",
+    "HEAD",
+    "PATCH",
+    "POST",
+    "PUT"
+  ];
+
+  // node_modules/workbox-routing/utils/normalizeHandler.js
+  var normalizeHandler = (handler) => {
+    if (handler && typeof handler === "object") {
+      if (true) {
+        finalAssertExports.hasMethod(handler, "handle", {
+          moduleName: "workbox-routing",
+          className: "Route",
+          funcName: "constructor",
+          paramName: "handler"
+        });
+      }
+      return handler;
+    } else {
+      if (true) {
+        finalAssertExports.isType(handler, "function", {
+          moduleName: "workbox-routing",
+          className: "Route",
+          funcName: "constructor",
+          paramName: "handler"
+        });
+      }
+      return { handle: handler };
+    }
+  };
+
+  // node_modules/workbox-routing/Route.js
+  var Route = class {
+    constructor(match, handler, method = defaultMethod) {
+      if (true) {
+        finalAssertExports.isType(match, "function", {
+          moduleName: "workbox-routing",
+          className: "Route",
+          funcName: "constructor",
+          paramName: "match"
+        });
+        if (method) {
+          finalAssertExports.isOneOf(method, validMethods, { paramName: "method" });
+        }
+      }
+      this.handler = normalizeHandler(handler);
+      this.match = match;
+      this.method = method;
+    }
+    setCatchHandler(handler) {
+      this.catchHandler = normalizeHandler(handler);
+    }
+  };
+
+  // node_modules/workbox-routing/RegExpRoute.js
+  var RegExpRoute = class extends Route {
+    constructor(regExp, handler, method) {
+      if (true) {
+        finalAssertExports.isInstance(regExp, RegExp, {
+          moduleName: "workbox-routing",
+          className: "RegExpRoute",
+          funcName: "constructor",
+          paramName: "pattern"
+        });
+      }
+      const match = ({ url }) => {
+        const result = regExp.exec(url.href);
+        if (!result) {
+          return;
+        }
+        if (url.origin !== location.origin && result.index !== 0) {
+          if (true) {
+            logger.debug(`The regular expression '${regExp.toString()}' only partially matched against the cross-origin URL '${url.toString()}'. RegExpRoute's will only handle cross-origin requests if they match the entire URL.`);
+          }
+          return;
+        }
+        return result.slice(1);
+      };
+      super(match, handler, method);
+    }
+  };
+
+  // node_modules/workbox-routing/Router.js
+  var Router = class {
+    constructor() {
+      this._routes = new Map();
+      this._defaultHandlerMap = new Map();
+    }
+    get routes() {
+      return this._routes;
+    }
+    addFetchListener() {
+      self.addEventListener("fetch", (event) => {
+        const { request } = event;
+        const responsePromise = this.handleRequest({ request, event });
+        if (responsePromise) {
+          event.respondWith(responsePromise);
+        }
+      });
+    }
+    addCacheListener() {
+      self.addEventListener("message", (event) => {
+        if (event.data && event.data.type === "CACHE_URLS") {
+          const { payload } = event.data;
+          if (true) {
+            logger.debug(`Caching URLs from the window`, payload.urlsToCache);
+          }
+          const requestPromises = Promise.all(payload.urlsToCache.map((entry) => {
+            if (typeof entry === "string") {
+              entry = [entry];
+            }
+            const request = new Request(...entry);
+            return this.handleRequest({ request, event });
+          }));
+          event.waitUntil(requestPromises);
+          if (event.ports && event.ports[0]) {
+            void requestPromises.then(() => event.ports[0].postMessage(true));
+          }
+        }
+      });
+    }
+    handleRequest({ request, event }) {
+      if (true) {
+        finalAssertExports.isInstance(request, Request, {
+          moduleName: "workbox-routing",
+          className: "Router",
+          funcName: "handleRequest",
+          paramName: "options.request"
+        });
+      }
+      const url = new URL(request.url, location.href);
+      if (!url.protocol.startsWith("http")) {
+        if (true) {
+          logger.debug(`Workbox Router only supports URLs that start with 'http'.`);
+        }
+        return;
+      }
+      const sameOrigin = url.origin === location.origin;
+      const { params, route } = this.findMatchingRoute({
+        event,
+        request,
+        sameOrigin,
+        url
+      });
+      let handler = route && route.handler;
+      const debugMessages = [];
+      if (true) {
+        if (handler) {
+          debugMessages.push([`Found a route to handle this request:`, route]);
+          if (params) {
+            debugMessages.push([
+              `Passing the following params to the route's handler:`,
+              params
+            ]);
+          }
+        }
+      }
+      const method = request.method;
+      if (!handler && this._defaultHandlerMap.has(method)) {
+        if (true) {
+          debugMessages.push(`Failed to find a matching route. Falling back to the default handler for ${method}.`);
+        }
+        handler = this._defaultHandlerMap.get(method);
+      }
+      if (!handler) {
+        if (true) {
+          logger.debug(`No route found for: ${getFriendlyURL(url)}`);
+        }
+        return;
+      }
+      if (true) {
+        logger.groupCollapsed(`Router is responding to: ${getFriendlyURL(url)}`);
+        debugMessages.forEach((msg) => {
+          if (Array.isArray(msg)) {
+            logger.log(...msg);
+          } else {
+            logger.log(msg);
+          }
+        });
+        logger.groupEnd();
+      }
+      let responsePromise;
+      try {
+        responsePromise = handler.handle({ url, request, event, params });
+      } catch (err) {
+        responsePromise = Promise.reject(err);
+      }
+      const catchHandler = route && route.catchHandler;
+      if (responsePromise instanceof Promise && (this._catchHandler || catchHandler)) {
+        responsePromise = responsePromise.catch(async (err) => {
+          if (catchHandler) {
+            if (true) {
+              logger.groupCollapsed(`Error thrown when responding to:  ${getFriendlyURL(url)}. Falling back to route's Catch Handler.`);
+              logger.error(`Error thrown by:`, route);
+              logger.error(err);
+              logger.groupEnd();
+            }
+            try {
+              return await catchHandler.handle({ url, request, event, params });
+            } catch (catchErr) {
+              if (catchErr instanceof Error) {
+                err = catchErr;
+              }
+            }
+          }
+          if (this._catchHandler) {
+            if (true) {
+              logger.groupCollapsed(`Error thrown when responding to:  ${getFriendlyURL(url)}. Falling back to global Catch Handler.`);
+              logger.error(`Error thrown by:`, route);
+              logger.error(err);
+              logger.groupEnd();
+            }
+            return this._catchHandler.handle({ url, request, event });
+          }
+          throw err;
+        });
+      }
+      return responsePromise;
+    }
+    findMatchingRoute({ url, sameOrigin, request, event }) {
+      const routes = this._routes.get(request.method) || [];
+      for (const route of routes) {
+        let params;
+        const matchResult = route.match({ url, sameOrigin, request, event });
+        if (matchResult) {
+          if (true) {
+            if (matchResult instanceof Promise) {
+              logger.warn(`While routing ${getFriendlyURL(url)}, an async matchCallback function was used. Please convert the following route to use a synchronous matchCallback function:`, route);
+            }
+          }
+          params = matchResult;
+          if (Array.isArray(params) && params.length === 0) {
+            params = void 0;
+          } else if (matchResult.constructor === Object && Object.keys(matchResult).length === 0) {
+            params = void 0;
+          } else if (typeof matchResult === "boolean") {
+            params = void 0;
+          }
+          return { route, params };
+        }
+      }
+      return {};
+    }
+    setDefaultHandler(handler, method = defaultMethod) {
+      this._defaultHandlerMap.set(method, normalizeHandler(handler));
+    }
+    setCatchHandler(handler) {
+      this._catchHandler = normalizeHandler(handler);
+    }
+    registerRoute(route) {
+      if (true) {
+        finalAssertExports.isType(route, "object", {
+          moduleName: "workbox-routing",
+          className: "Router",
+          funcName: "registerRoute",
+          paramName: "route"
+        });
+        finalAssertExports.hasMethod(route, "match", {
+          moduleName: "workbox-routing",
+          className: "Router",
+          funcName: "registerRoute",
+          paramName: "route"
+        });
+        finalAssertExports.isType(route.handler, "object", {
+          moduleName: "workbox-routing",
+          className: "Router",
+          funcName: "registerRoute",
+          paramName: "route"
+        });
+        finalAssertExports.hasMethod(route.handler, "handle", {
+          moduleName: "workbox-routing",
+          className: "Router",
+          funcName: "registerRoute",
+          paramName: "route.handler"
+        });
+        finalAssertExports.isType(route.method, "string", {
+          moduleName: "workbox-routing",
+          className: "Router",
+          funcName: "registerRoute",
+          paramName: "route.method"
+        });
+      }
+      if (!this._routes.has(route.method)) {
+        this._routes.set(route.method, []);
+      }
+      this._routes.get(route.method).push(route);
+    }
+    unregisterRoute(route) {
+      if (!this._routes.has(route.method)) {
+        throw new WorkboxError("unregister-route-but-not-found-with-method", {
+          method: route.method
+        });
+      }
+      const routeIndex = this._routes.get(route.method).indexOf(route);
+      if (routeIndex > -1) {
+        this._routes.get(route.method).splice(routeIndex, 1);
+      } else {
+        throw new WorkboxError("unregister-route-route-not-registered");
+      }
+    }
+  };
+
+  // node_modules/workbox-routing/utils/getOrCreateDefaultRouter.js
+  var defaultRouter;
+  var getOrCreateDefaultRouter = () => {
+    if (!defaultRouter) {
+      defaultRouter = new Router();
+      defaultRouter.addFetchListener();
+      defaultRouter.addCacheListener();
+    }
+    return defaultRouter;
+  };
+
+  // node_modules/workbox-routing/registerRoute.js
+  function registerRoute(capture, handler, method) {
+    let route;
+    if (typeof capture === "string") {
+      const captureUrl = new URL(capture, location.href);
+      if (true) {
+        if (!(capture.startsWith("/") || capture.startsWith("http"))) {
+          throw new WorkboxError("invalid-string", {
+            moduleName: "workbox-routing",
+            funcName: "registerRoute",
+            paramName: "capture"
+          });
+        }
+        const valueToCheck = capture.startsWith("http") ? captureUrl.pathname : capture;
+        const wildcards = "[*:?+]";
+        if (new RegExp(`${wildcards}`).exec(valueToCheck)) {
+          logger.debug(`The '$capture' parameter contains an Express-style wildcard character (${wildcards}). Strings are now always interpreted as exact matches; use a RegExp for partial or wildcard matches.`);
+        }
+      }
+      const matchCallback = ({ url }) => {
+        if (true) {
+          if (url.pathname === captureUrl.pathname && url.origin !== captureUrl.origin) {
+            logger.debug(`${capture} only partially matches the cross-origin URL ${url.toString()}. This route will only handle cross-origin requests if they match the entire URL.`);
+          }
+        }
+        return url.href === captureUrl.href;
+      };
+      route = new Route(matchCallback, handler, method);
+    } else if (capture instanceof RegExp) {
+      route = new RegExpRoute(capture, handler, method);
+    } else if (typeof capture === "function") {
+      route = new Route(capture, handler, method);
+    } else if (capture instanceof Route) {
+      route = capture;
+    } else {
+      throw new WorkboxError("unsupported-route-type", {
+        moduleName: "workbox-routing",
+        funcName: "registerRoute",
+        paramName: "capture"
+      });
+    }
+    const defaultRouter2 = getOrCreateDefaultRouter();
+    defaultRouter2.registerRoute(route);
+    return route;
+  }
+
+  // node_modules/workbox-precaching/utils/removeIgnoredSearchParams.js
+  function removeIgnoredSearchParams(urlObject, ignoreURLParametersMatching = []) {
+    for (const paramName of [...urlObject.searchParams.keys()]) {
+      if (ignoreURLParametersMatching.some((regExp) => regExp.test(paramName))) {
+        urlObject.searchParams.delete(paramName);
+      }
+    }
+    return urlObject;
+  }
+
+  // node_modules/workbox-precaching/utils/generateURLVariations.js
+  function* generateURLVariations(url, { ignoreURLParametersMatching = [/^utm_/, /^fbclid$/], directoryIndex = "index.html", cleanURLs = true, urlManipulation } = {}) {
+    const urlObject = new URL(url, location.href);
+    urlObject.hash = "";
+    yield urlObject.href;
+    const urlWithoutIgnoredParams = removeIgnoredSearchParams(urlObject, ignoreURLParametersMatching);
+    yield urlWithoutIgnoredParams.href;
+    if (directoryIndex && urlWithoutIgnoredParams.pathname.endsWith("/")) {
+      const directoryURL = new URL(urlWithoutIgnoredParams.href);
+      directoryURL.pathname += directoryIndex;
+      yield directoryURL.href;
+    }
+    if (cleanURLs) {
+      const cleanURL = new URL(urlWithoutIgnoredParams.href);
+      cleanURL.pathname += ".html";
+      yield cleanURL.href;
+    }
+    if (urlManipulation) {
+      const additionalURLs = urlManipulation({ url: urlObject });
+      for (const urlToAttempt of additionalURLs) {
+        yield urlToAttempt.href;
+      }
+    }
+  }
+
+  // node_modules/workbox-precaching/PrecacheRoute.js
+  var PrecacheRoute = class extends Route {
+    constructor(precacheController2, options) {
+      const match = ({ request }) => {
+        const urlsToCacheKeys = precacheController2.getURLsToCacheKeys();
+        for (const possibleURL of generateURLVariations(request.url, options)) {
+          const cacheKey = urlsToCacheKeys.get(possibleURL);
+          if (cacheKey) {
+            const integrity = precacheController2.getIntegrityForCacheKey(cacheKey);
+            return { cacheKey, integrity };
+          }
+        }
+        if (true) {
+          logger.debug(`Precaching did not find a match for ` + getFriendlyURL(request.url));
+        }
+        return;
+      };
+      super(match, precacheController2.strategy);
+    }
+  };
+
+  // node_modules/workbox-precaching/addRoute.js
+  function addRoute(options) {
+    const precacheController2 = getOrCreatePrecacheController();
+    const precacheRoute = new PrecacheRoute(precacheController2, options);
+    registerRoute(precacheRoute);
+  }
+
+  // node_modules/workbox-precaching/precache.js
+  function precache(entries) {
+    const precacheController2 = getOrCreatePrecacheController();
+    precacheController2.precache(entries);
+  }
+
+  // node_modules/workbox-precaching/precacheAndRoute.js
+  function precacheAndRoute(entries, options) {
+    precache(entries);
+    addRoute(options);
+  }
 
   // node_modules/workbox-strategies/utils/messages.js
   var messages2 = {
@@ -1717,13 +2225,14 @@
   };
 
   // sw.ts
-  var imageRoute = new Route(({ request }) => {
-    return request.destination === "image";
-  }, new CacheFirst({
+  precacheAndRoute([{"revision":"fc0e248f08fb36c59c4a49c44b5cec8f","url":"css/critical.min.css"},{"revision":"638ca04fb6f6b949e120584910c384cf","url":"css/landscape.min.css"},{"revision":"230df3772f7c36651b2841dc60d26f1b","url":"css/portrait.min.css"},{"revision":"af3a6280f80a268a8ca88be21424fd4d","url":"css/style.min.css"},{"revision":"47e83d116219a671e3e57a482d0813f8","url":"css/tablet.min.css"},{"revision":"2901c31e2127a41548292cb72d1dcbe0","url":"fonts/Roboto-Regular.woff2"},{"revision":"a48159a00587c958c4a58c192f3c287c","url":"img/1x1.png"},{"revision":"9617cd4b5152fdb8bad11ce7ef17a514","url":"img/1x1.webp"},{"revision":"3302f17076136146ba9ec3ada01918f8","url":"img/about_us/image-1.png"},{"revision":"27fd5d19f76a9bf237196cd544310b79","url":"img/about_us/image-1.webp"},{"revision":"9f1197727bef0fe9fe9d0d533e292607","url":"img/about_us/image.png"},{"revision":"eee95188c7da795124b7f66e786431cb","url":"img/about_us/image.webp"},{"revision":"489fdf3233a35469b8a3abaacf5097ee","url":"img/about_us/signed/Rectangle-1.png"},{"revision":"0423b593d68148609dcaa96b5a75e85c","url":"img/about_us/signed/Rectangle-1.webp"},{"revision":"b3805cbd147c4f53f6a71ce4de0cf49a","url":"img/about_us/signed/Rectangle.png"},{"revision":"b64720d83bf82f3200b8338ca825fd23","url":"img/about_us/signed/Rectangle.webp"},{"revision":"963a73036945d1898bf80e1b676fe42a","url":"img/books/Rectangle-1.png"},{"revision":"1864327214afda54c0d9d6f288851183","url":"img/books/Rectangle-1.webp"},{"revision":"6ad3e94934cd86673b1a3b92582e8b1b","url":"img/books/Rectangle-2.png"},{"revision":"9c1bc55af60f0fb08057dba005abecc6","url":"img/books/Rectangle-2.webp"},{"revision":"ad559d71293f79e5f10d6a95edbc5271","url":"img/books/Rectangle-3.png"},{"revision":"101ad9b3a858c9feb246f0cce53010cf","url":"img/books/Rectangle-3.webp"},{"revision":"280663b51d520e2bc14958aa4ccd88d8","url":"img/books/Rectangle-4.png"},{"revision":"cf4c7d947f5a0a2bc63c0727070be17a","url":"img/books/Rectangle-4.webp"},{"revision":"440a7510c149547aa349844d34e6383c","url":"img/books/Rectangle-5.png"},{"revision":"fb152c1b71571f9d40f68e7b3ea6e8fd","url":"img/books/Rectangle-5.webp"},{"revision":"799d6f61dacb86c53e4b62063ba27e78","url":"img/books/Rectangle-6.png"},{"revision":"9718b7936ea07ea9f94f832dbd6ebc80","url":"img/books/Rectangle-6.webp"},{"revision":"c166fc1d3072a0333f67eb136088d26e","url":"img/books/Rectangle.png"},{"revision":"ca517fc0afd8a8c6a6aa1925ef941879","url":"img/books/Rectangle.webp"},{"revision":"ec6aa342483c36815a1d4a722e933215","url":"img/brand/Rectangle-1.png"},{"revision":"a51daff6dcb9ea7dae7ab51b9d773b22","url":"img/brand/Rectangle-1.webp"},{"revision":"2fa78647acd00edb60f7569880350106","url":"img/brand/Rectangle-2.png"},{"revision":"ea12ecbd028a57ee0511b2b84766fb70","url":"img/brand/Rectangle-2.webp"},{"revision":"6bdf19ff8b6df4d4b62589f502d26c4f","url":"img/brand/Rectangle-3.png"},{"revision":"d305c797d3892a9a6bddd4019c8cc9ff","url":"img/brand/Rectangle-3.webp"},{"revision":"ee55a624e64d5614bb305cb3cac794c6","url":"img/brand/Rectangle-4.png"},{"revision":"dd566901f5878307a82ee8077717fe67","url":"img/brand/Rectangle-4.webp"},{"revision":"8cffd1eb19ec692296af69749cc20ca0","url":"img/brand/Rectangle-5.png"},{"revision":"a072a9ab7dcae1763f008d3be299e09e","url":"img/brand/Rectangle-5.webp"},{"revision":"7cfcbf229a295a93964cb41309d28ee5","url":"img/brand/Rectangle-6.png"},{"revision":"e244c466368b563d1a0dcf3bf707bf28","url":"img/brand/Rectangle-6.webp"},{"revision":"c576d48dc9843d39966693e5efbc0c3f","url":"img/brand/Rectangle-7.png"},{"revision":"b76513275ea52cddef937c8bd9022341","url":"img/brand/Rectangle-7.webp"},{"revision":"2752d434c25592c102ae4abb43101c92","url":"img/brand/Rectangle-8.png"},{"revision":"8a33dcba8dcadcfbf52757c7c1eeeb29","url":"img/brand/Rectangle-8.webp"},{"revision":"76e554f640593cdca50e921579a94e27","url":"img/brand/Rectangle-9.png"},{"revision":"2d49f6a3e5aa5bb319d3e65008937e0d","url":"img/brand/Rectangle-9.webp"},{"revision":"6948cfcfd08fca58be5a41e0c595b479","url":"img/brand/Rectangle.png"},{"revision":"b38a2e80adc97947d3c02c6740766d4e","url":"img/brand/Rectangle.webp"},{"revision":"639b9adb8867f7a4adf8accd0d22099d","url":"img/eu4fgssvf211.png"},{"revision":"0f754039102028568c8f18eaa8f2bee8","url":"img/eu4fgssvf211.webp"},{"revision":"61c69dcf22585d94f6945062144d2611","url":"img/eu4fgssvf28.png"},{"revision":"7d26089716210a40135269294da6377e","url":"img/eu4fgssvf28.webp"},{"revision":"c0618e9fd3d9b2aa7d9bdba8722d1077","url":"img/history/Rectangle-1.png"},{"revision":"02c890e6112351ee0ce9a85ed31a7847","url":"img/history/Rectangle-1.webp"},{"revision":"b14215fa9146191a1064274a44e596d9","url":"img/history/Rectangle-2.png"},{"revision":"b269033a3ed967b4ce62581ed1b06d5a","url":"img/history/Rectangle-2.webp"},{"revision":"4f39e62be255e01dd3c305cc52fbd515","url":"img/history/Rectangle-3.png"},{"revision":"e6b4ce357622f5257277756a62bb6999","url":"img/history/Rectangle-3.webp"},{"revision":"09c670f6684ea76d615e863e1a2d16af","url":"img/history/Rectangle-4.png"},{"revision":"d08b5c5f2d7b2e3a30d03328c75480d9","url":"img/history/Rectangle-4.webp"},{"revision":"4398a16fa304b0ed8066ac2a065ded34","url":"img/history/Rectangle-5.png"},{"revision":"1aad7e509451eefd2a2cd5307340030b","url":"img/history/Rectangle-5.webp"},{"revision":"4ecfe3961fe8a1fee92acbee78fe7fab","url":"img/history/Rectangle-6.png"},{"revision":"9fb58bcc56c0ee0407525830e0bf1224","url":"img/history/Rectangle-6.webp"},{"revision":"bca9894c2324a92e9ac9f0dfbd08288b","url":"img/history/Rectangle-7.png"},{"revision":"47c11b1da06f4df37630a80924364dbe","url":"img/history/Rectangle-7.webp"},{"revision":"a148d724995b9e4883c13788756e03d2","url":"img/history/Rectangle.png"},{"revision":"bd989fc7940f9b3ac08137ae2e87a3d3","url":"img/history/Rectangle.webp"},{"revision":"ca38c0e08d38fbbb09b0805e660d79db","url":"img/icons/icons.svg"},{"revision":"aa7d9e9804254e2fc5a3039822a9029b","url":"img/icons/Vector-1.png"},{"revision":"5eaf1bdcb09823f790d42460b0d4fb28","url":"img/icons/Vector-1.webp"},{"revision":"87b61b620f06346af3fcf705a777fdf4","url":"img/icons/Vector-2.png"},{"revision":"35fe676ba2bf237472aadfdda481f4e5","url":"img/icons/Vector-2.webp"},{"revision":"96c9e3b3e8bedf94524e0762489a558d","url":"img/icons/Vector-3.png"},{"revision":"cb8bd2cf5a73358f68a0fc7321f707f9","url":"img/icons/Vector-3.webp"},{"revision":"99b985dca1d9c5578b3abc33f33e7753","url":"img/icons/Vector.png"},{"revision":"f4a45a15964f20b2c455338a7e4c9392","url":"img/icons/Vector.webp"},{"revision":"60ef0a7ed008ed07883a1c1cc217a8b6","url":"img/logo/image-2x.png"},{"revision":"15e4b5b3afd6ac0babb079fd568b40ef","url":"img/logo/image-2x.webp"},{"revision":"4bf87c85e3167b5e0a29c363168e714e","url":"img/logo/image-3x.png"},{"revision":"595c01ed5de1ec8ce6990edb2c0b29fb","url":"img/logo/image-3x.webp"},{"revision":"068deb81f993194007a77d94cdfed7a2","url":"img/logo/image-4x.png"},{"revision":"6ab798d20eea36063cea2f16dd8783c6","url":"img/logo/image-4x.webp"},{"revision":"6e230d16306a52881e201f82e2047634","url":"img/logo/image-512h.png"},{"revision":"9ed0f4ca44277b4bff99485470aeac0d","url":"img/logo/image-512h.webp"},{"revision":"5ce5db780dc56bc6a16cf25c15112761","url":"img/logo/image-512w.png"},{"revision":"5cbd55396786467d088441360147123b","url":"img/logo/image-512w.webp"},{"revision":"be4a20f6b63089f3da57493ec5eec449","url":"img/logo/image-512x512.png"},{"revision":"537d6c9092198118be01662c94e5c790","url":"img/logo/image-512x512.webp"},{"revision":"33743534e207c1cd95b5b8849ca28fb1","url":"img/logo/image.png"},{"revision":"b582dcaee959ee1fd2d46d0be117d234","url":"img/logo/image.webp"},{"revision":"e1a8999f01b158f8fd3e5873b0f367e7","url":"js/app.min.js"},{"revision":"7698872bc54689d2637c257bc943bf41","url":"webpack.config.js"}]);
+  registerRoute(({ request }) => request.destination === "image", new CacheFirst({
     cacheName: "images",
     plugins: [
       new ExpirationPlugin({
-        maxAgeSeconds: 60 * 60 * 24 * 30
+        maxEntries: 50,
+        maxAgeSeconds: 30 * 24 * 60 * 60,
+        purgeOnQuotaError: true
       })
     ]
   }));
@@ -1742,7 +2251,6 @@
   }, new CacheFirst({
     cacheName: "styles"
   }));
-  registerRoute(imageRoute);
   registerRoute(scriptsRoute);
   registerRoute(stylesRoute);
 })();
