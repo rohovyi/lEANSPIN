@@ -2298,7 +2298,7 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
     plugins: [
       new ExpirationPlugin({
         maxEntries: 50,
-        maxAgeSeconds: 30 * 24 * 60 * 60,
+        maxAgeSeconds: 30 * 24 * 60 * 600,
         purgeOnQuotaError: true
       })
     ]
